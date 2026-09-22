@@ -1,0 +1,49 @@
+name: Quinlan CI
+
+on:
+  push:
+    branches: ["release-0.0.73_dev"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.23.3'
+
+      - name: Build ks binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w" -o build/ks .
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push images
+        run: |
+          IMAGE_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          TAG=$(git rev-parse --short HEAD)-$(date '+%Y%m%d%H%M%S')
+
+          # ks-devops-tools
+          TOOLS_IMAGE=ghcr.io/${IMAGE_OWNER_LOWER}/ks-devops-tools
+          docker build -t ${TOOLS_IMAGE}:${TAG} -t ${TOOLS_IMAGE}:latest \
+            -f build/Dockerfile ./build
+          docker push ${TOOLS_IMAGE}:${TAG}
+          docker push ${TOOLS_IMAGE}:latest
